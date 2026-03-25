@@ -1,0 +1,160 @@
+import torch
+from torch import nn
+from torchvision.transforms import v2
+import math
+
+from src.mnist import get_dataset, PadAndEmbed
+from src.qr import qr_factorize_tens
+
+device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
+
+class BinaryTTNLayer(torch.nn.Module):
+    def __init__(self, bond_dim:int=16, input_shape:tuple[int, int]=(32, 32), in_dim:int=2):
+        '''
+        Tree Tensor Network layer. It consists of `(input_shape[0]*input_shape[1])//2` tensors, each of shape `[bond_dim, in_dim, in_dim]`.
+
+        Args:
+            bond_dim (int): The dimension of the output vectors from this layer.
+
+            input_shape (tuple[int, int]): Number of pixels (tensors) in the previous layer. 
+                Since the TTN consists of interweaved horizontal-vertical layers, the orientation
+                will be determined from `input_shape` automatically.
+                For vertical (`orientation=0`) layers, the output will be of shape `[input_shape[0]//2, input_shape[1], bond_dim]`.
+                For horizontal (`orientation=1`) layers, the output will be of shape `[input_shape[0], input_shape[1]//2, bond_dim]`.
+
+            in_dim (int): The dimension of the input vectors to this layer. Inputs should be of size `[input_shape[0], input_shape[1], in_dim]`.
+        '''
+
+        super().__init__()
+
+        self.orientation = input_shape[0] < input_shape[1] # 0 vertical, 1 horizontal
+
+        self.grid_shape = [input_shape[0] // (1 + (1-self.orientation)), input_shape[1] // (1 + self.orientation)]
+
+        self.weights = torch.nn.Parameter(
+            torch.rand((*self.grid_shape, bond_dim, in_dim, in_dim))
+        )
+
+        nn.init.xavier_uniform_(self.weights)
+
+    def forward(self, x:torch.Tensor):
+        in_dim = x.shape[-1]
+
+        x = x*2-1
+
+        h, w = self.grid_shape
+        if self.orientation:
+            x_reshaped = x.reshape((h, w, 2, in_dim))
+            left, right = x_reshaped[:, :, 0, :], x_reshaped[:, :, 1, :]
+        else:
+            x_reshaped = x.reshape((h, 2, w, in_dim))
+            left, right = x_reshaped[:, 0, :, :], x_reshaped[:, 1, :, :]
+
+        output = torch.einsum('x y b i j, x y i, x y j -> x y b', self.weights, left, right)
+        # - x: x index
+        # - y: y index
+        # - b: bond dimension
+        # - i: in_dim
+        # - j: in_dim
+
+        # ============== non-alternating version (old) ==============
+        # n_children, in_dim = x.shape
+        # x = x.view((n_children//2, 2, in_dim)) # [n_children//2, 2, in_dim]
+        # left, right = x[:, 0, :], x[:, 1, :] # [n_children//2, in_dim]
+        # output = torch.einsum('a b i j, a i, a j -> a b', self._weights, left, right)
+        # ===========================================================
+
+        print(f'[Layer - {("V", "H")[self.orientation]}: {self.grid_shape}] min: {output.min():.3f}, max: {output.max():.3f}')
+        return output
+
+
+class BinaryTTN(torch.nn.Module):
+    def __init__(self, input_shape:tuple[int, int]=(32, 32), pixel_embedding_dim:int=2, bond_dim:int=16):
+        '''
+        Tree Tensor Network module.
+
+        Args:
+            input_shape (tuple[int, int]): Image height and width, in pixels and after padding. 
+                For example, the MNIST dataset has `28x28` images, which are then padded to the
+                nearest power of 2 (`32x32`). This class supports rectangular images, as long as
+                their height and width are both powers of 2.
+
+            pixel_embedding_dim (int): Dimension of each pixel embedding. 2 in the case of MNIST.
+
+            bond_dim (int): Bond dimension of the TTN.
+        '''
+        super().__init__()
+
+        for i, n_pixels in enumerate(input_shape):
+            assert (not math.log2(n_pixels) % 1), f'The {("height", "width")[i]} of the input should be a power of 2. [input_shape = {input_shape}]'
+        
+        self._input_shape = input_shape
+
+        self._bond_dim = bond_dim
+
+        self._pixel_embedding_dim = pixel_embedding_dim
+
+        self._n_layers = round(math.log2(input_shape[0]*input_shape[1]))
+
+        layers = [BinaryTTNLayer(bond_dim, input_shape, in_dim=pixel_embedding_dim)]
+        for i in range(self._n_layers -2):
+            layers.append(
+                BinaryTTNLayer(bond_dim, input_shape=layers[-1].grid_shape, in_dim=bond_dim)
+            )
+        layers.append(BinaryTTNLayer(bond_dim=1, input_shape=(1,2), in_dim=bond_dim))
+
+        self._layers = nn.Sequential(*layers)
+
+        # ============== non-alternating version (old) ==============
+        # self._layers = nn.Sequential(
+        #     BinaryTTNLayer(bond_dim, input_size, in_dim=pixel_embedding_dim),
+        #     *(BinaryTTNLayer(bond_dim, input_size//(2**i),in_dim=bond_dim) for i in range(1, self._n_layers -1)),
+        #     BinaryTTNLayer(1, 2, in_dim=bond_dim)
+        # )
+        # ===========================================================
+
+    def forward(self, x:torch.Tensor):   
+        # ============== non-alternating version (old) ==============
+        # x = x.flatten(start_dim=1).transpose(0, 1) # pixel-wise flatten (shape = [N_pixels, pixel_dim])
+        # ===========================================================
+        
+        x = x.permute(1, 2, 0) # [w, h, pixel_dim]
+
+        return self._layers(x)
+    
+    def canonicalize_network(self, normalize_root:bool=False):
+        layer = self._layers[0]
+        h, w, bond_dim, in_dim, _ = layer.weights.shape
+        weights_reshaped = layer.weights.permute((0, 1, 3, 4, 2)).reshape((h, w, in_dim**2, bond_dim))
+        Q, R = qr_factorize_tens(weights_reshaped)
+
+        with torch.no_grad():
+            layer.weights.copy_(
+                Q.reshape((h, w, in_dim, in_dim, bond_dim)).permute((0, 1, 4, 2, 3))
+            )
+
+        for layer in self._layers[1:-1]:
+            h, w, bond_dim, in_dim, _ = layer.weights.shape
+            breakpoint()
+
+
+if __name__ == '__main__':
+    
+    ds = get_dataset(
+        train=True, 
+        transform=v2.Compose(
+            [
+                v2.ToImage(), 
+                v2.ToDtype(torch.float32, scale=True),
+                PadAndEmbed()
+            ]
+        )
+    )
+
+    TTN = BinaryTTN((32,32), 2, 16)
+
+
+    img = ds[0][0]
+
+    print(TTN(img))
+    TTN.canonicalize_network()
