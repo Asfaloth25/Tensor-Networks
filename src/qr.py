@@ -1,6 +1,6 @@
 import torch
 
-def qr_factorize(X:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
+def qr_factorize(X:torch.Tensor, eps:float=1e-9)->tuple[torch.Tensor, torch.Tensor]:
     '''
     Vectorized QR matrix factorization using Gram-Schmidt algorithm.
     '''
@@ -21,7 +21,7 @@ def qr_factorize(X:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
             dot_prods * prev_cols # [N] * [h, N] = [h, N]
         ).sum(dim=-1) # [h]
 
-        norm = torch.sqrt((col **2).sum())
+        norm = torch.sqrt((col **2).sum()).clamp_min(eps)
         Q[:, idx_col] = col / norm
 
         R[:idx_col, idx_col] = dot_prods
@@ -29,7 +29,7 @@ def qr_factorize(X:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
 
     return Q, R
 
-def qr_factorize_tens(X:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
+def qr_factorize_tens(X:torch.Tensor, eps:float=1e-9)->tuple[torch.Tensor, torch.Tensor]:
     '''
     Vectorized QR factorization of the last 2 axes of `X` using Gram-Schmidt algorithm.
     '''
@@ -50,7 +50,7 @@ def qr_factorize_tens(X:torch.Tensor)->tuple[torch.Tensor, torch.Tensor]:
             dot_prods.unsqueeze(-2) * prev_cols # [..., N] * [..., h, N] = [..., h, N]
         ).sum(dim=-1) # [..., h]
 
-        norm = torch.sqrt((col **2).sum(dim=-1)) # [...]
+        norm = torch.sqrt((col **2).sum(dim=-1)).clamp_min(eps) # [...]
         Q[..., idx_col] = col / norm.unsqueeze(-1)
 
         R[..., :idx_col, idx_col] = dot_prods

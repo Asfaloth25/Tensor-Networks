@@ -57,13 +57,6 @@ class BinaryTTNLayer(torch.nn.Module):
         # - i: in_dim
         # - j: in_dim
 
-        # ============== non-alternating version (old) ==============
-        # n_children, in_dim = x.shape
-        # x = x.view((n_children//2, 2, in_dim)) # [n_children//2, 2, in_dim]
-        # left, right = x[:, 0, :], x[:, 1, :] # [n_children//2, in_dim]
-        # output = torch.einsum('a b i j, a i, a j -> a b', self._weights, left, right)
-        # ===========================================================
-
         print(f'[Layer - {("V", "H")[self.orientation]}: {self.grid_shape}] min: {output.min():.3f}, max: {output.max():.3f}')
         return output
 
@@ -105,19 +98,7 @@ class BinaryTTN(torch.nn.Module):
 
         self._layers = nn.Sequential(*layers)
 
-        # ============== non-alternating version (old) ==============
-        # self._layers = nn.Sequential(
-        #     BinaryTTNLayer(bond_dim, input_size, in_dim=pixel_embedding_dim),
-        #     *(BinaryTTNLayer(bond_dim, input_size//(2**i),in_dim=bond_dim) for i in range(1, self._n_layers -1)),
-        #     BinaryTTNLayer(1, 2, in_dim=bond_dim)
-        # )
-        # ===========================================================
-
     def forward(self, x:torch.Tensor):   
-        # ============== non-alternating version (old) ==============
-        # x = x.flatten(start_dim=1).transpose(0, 1) # pixel-wise flatten (shape = [N_pixels, pixel_dim])
-        # ===========================================================
-        
         x = x.permute(1, 2, 0) # [w, h, pixel_dim]
 
         return self._layers(x)
@@ -133,9 +114,32 @@ class BinaryTTN(torch.nn.Module):
                 Q.reshape((h, w, in_dim, in_dim, bond_dim)).permute((0, 1, 4, 2, 3))
             )
 
-        for layer in self._layers[1:-1]:
-            h, w, bond_dim, in_dim, _ = layer.weights.shape
-            breakpoint()
+            for layer in self._layers[1:-1]:
+                h, w, bond_dim, in_dim, _ = layer.weights.shape
+                orientation = layer.orientation
+
+                if orientation: # horizontal
+                    R_reshaped = R.reshape((h, w, 2, in_dim, in_dim))
+                    left, right = R_reshaped[:, :, 0, :, :], R_reshaped[:, :, 1, :, :]
+                else: # vertical
+                    R_reshaped = R.reshape((h, 2, w, in_dim, in_dim))
+                    left, right = R_reshaped[:, 0, :, :, :], R_reshaped[:, 1, :, :, :]
+
+                new_weights = torch.einsum('x y d b, x y b i j -> x y d i j', left, layer.weights)
+                new_weights = torch.einsum('x y d b, x y b i j -> x y d i j', right, new_weights)
+                # - x: x index
+                # - y: y index
+                # - d: "new" bond dimension
+                # - b: bond dimension
+                # - i: in_dim
+                # - j: in_dim
+            
+                weights_reshaped = new_weights.permute((0, 1, 3, 4, 2)).reshape((h, w, in_dim**2, bond_dim))
+                Q, R = qr_factorize_tens(weights_reshaped)
+
+                layer.weights.copy_(
+                    Q.reshape((h, w, in_dim, in_dim, bond_dim)).permute((0, 1, 4, 2, 3))
+                )
 
 
 if __name__ == '__main__':
@@ -153,8 +157,14 @@ if __name__ == '__main__':
 
     TTN = BinaryTTN((32,32), 2, 16)
 
+    for i, layer in enumerate(TTN._layers):
+        print(i, layer.weights.norm())
 
     img = ds[0][0]
 
     print(TTN(img))
     TTN.canonicalize_network()
+    
+    for i, layer in enumerate(TTN._layers):
+        print("canon", i, layer.weights.norm())
+    print(TTN(img))
