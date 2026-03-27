@@ -125,21 +125,36 @@ class BinaryTTN(torch.nn.Module):
                     R_reshaped = R.reshape((h, 2, w, in_dim, in_dim))
                     left, right = R_reshaped[:, 0, :, :, :], R_reshaped[:, 1, :, :, :]
 
-                new_weights = torch.einsum('x y d b, x y b i j -> x y d i j', left, layer.weights)
-                new_weights = torch.einsum('x y d b, x y b i j -> x y d i j', right, new_weights)
+                new_weights = torch.einsum('x y i k, x y b k j -> x y b i j', left, layer.weights)
+                new_weights = torch.einsum('x y j k, x y b i k -> x y b i j', right, new_weights)
                 # - x: x index
                 # - y: y index
-                # - d: "new" bond dimension
                 # - b: bond dimension
+                # - k: contracted index
                 # - i: in_dim
                 # - j: in_dim
-            
+
                 weights_reshaped = new_weights.permute((0, 1, 3, 4, 2)).reshape((h, w, in_dim**2, bond_dim))
                 Q, R = qr_factorize_tens(weights_reshaped)
 
                 layer.weights.copy_(
                     Q.reshape((h, w, in_dim, in_dim, bond_dim)).permute((0, 1, 4, 2, 3))
                 )
+            
+            layer = self._layers[-1]
+            h, w, bond_dim, in_dim, _ = layer.weights.shape
+            orientation = layer.orientation
+
+            if orientation: # horizontal
+                R_reshaped = R.reshape((h, w, 2, in_dim, in_dim))
+                left, right = R_reshaped[:, :, 0, :, :], R_reshaped[:, :, 1, :, :]
+            else: # vertical
+                R_reshaped = R.reshape((h, 2, w, in_dim, in_dim))
+                left, right = R_reshaped[:, 0, :, :, :], R_reshaped[:, 1, :, :, :]
+
+            new_weights = torch.einsum('x y i k, x y b k j -> x y b i j', left, layer.weights)
+            new_weights = torch.einsum('x y j k, x y b i k -> x y b i j', right, new_weights)
+            layer.weights.copy_(new_weights)
 
 
 if __name__ == '__main__':
@@ -157,14 +172,17 @@ if __name__ == '__main__':
 
     TTN = BinaryTTN((32,32), 2, 16)
 
-    for i, layer in enumerate(TTN._layers):
-        print(i, layer.weights.norm())
+    from pprint import pprint
+
+    print('Original network:')
+    pprint({i: layer.weights.norm().item() for i, layer in enumerate(TTN._layers)})
 
     img = ds[0][0]
 
     print(TTN(img))
+
     TTN.canonicalize_network()
     
-    for i, layer in enumerate(TTN._layers):
-        print("canon", i, layer.weights.norm())
+    print('\n\nCanonicalized network:')
+    pprint({i: layer.weights.norm().item() for i, layer in enumerate(TTN._layers)})
     print(TTN(img))
