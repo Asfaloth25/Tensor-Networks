@@ -35,12 +35,8 @@ class BinaryTTNLayer(torch.nn.Module):
             torch.rand((*self.grid_shape, bond_dim, in_dim, in_dim))
         )
 
-        nn.init.xavier_uniform_(self.weights)
-
     def forward(self, x:torch.Tensor):
         in_dim = x.shape[-1]
-
-        x = x*2-1
 
         h, w = self.grid_shape
         if self.orientation:
