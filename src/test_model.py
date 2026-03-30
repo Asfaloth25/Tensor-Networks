@@ -15,9 +15,9 @@ if __name__ == "__main__":
     img = torch.stack([
         torch.cos(theta * torch.pi/2),
         torch.sin(theta * torch.pi/2)
-    ])
+    ]).unsqueeze(dim=0)
 
-    print('Each pixel has modulus 1:', torch.allclose(img[0]**2 + img[1]**2, torch.ones_like(theta)))
+    print('Each pixel has modulus 1:', torch.allclose(img[:, 0, ...]**2 + img[:, 1, ...]**2, torch.ones_like(theta).unsqueeze(dim=0)))
 
     print(model(img))
 

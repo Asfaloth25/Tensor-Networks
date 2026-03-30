@@ -51,18 +51,19 @@ class BinaryTTNLayer(torch.nn.Module):
         )
 
 
-    def forward(self, x:torch.Tensor):
-        in_dim = x.shape[-1]
+    def forward(self, x:torch.Tensor): 
+        batch_size, _, _, in_dim = x.shape
 
         h, w = self.grid_shape
         if self.orientation:
-            x_reshaped = x.reshape((h, w, 2, in_dim))
-            left, right = x_reshaped[:, :, 0, :], x_reshaped[:, :, 1, :]
+            x_reshaped = x.reshape((batch_size, h, w, 2, in_dim))
+            left, right = x_reshaped[:, :, :, 0, :], x_reshaped[:, :, :, 1, :]
         else:
-            x_reshaped = x.reshape((h, 2, w, in_dim))
-            left, right = x_reshaped[:, 0, :, :], x_reshaped[:, 1, :, :]
+            x_reshaped = x.reshape((batch_size, h, 2, w, in_dim))
+            left, right = x_reshaped[:, :, 0, :, :], x_reshaped[:, :, 1, :, :]
 
-        output = torch.einsum('x y b i j, x y i, x y j -> x y b', self.weights, left, right)
+        output = torch.einsum('x y b i j, n x y i, n x y j -> n x y b', self.weights, left, right)
+        # - n: batch
         # - x: x index
         # - y: y index
         # - b: bond dimension
@@ -111,7 +112,7 @@ class BinaryTTN(torch.nn.Module):
         self._layers = nn.Sequential(*layers)
 
     def forward(self, x:torch.Tensor):   
-        x = x.permute(1, 2, 0) # [w, h, pixel_dim]
+        x = x.permute(0, 2, 3, 1) # [w, h, pixel_dim]
 
         return self._layers(x)
     
@@ -189,7 +190,7 @@ if __name__ == '__main__':
     print('Original network:')
     pprint({i: layer.weights.norm().item() for i, layer in enumerate(TTN._layers)})
 
-    img = ds[0][0]
+    img = ds[0][0].unsqueeze(0)
 
     print(TTN(img))
 
