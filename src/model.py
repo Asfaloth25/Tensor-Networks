@@ -70,7 +70,7 @@ class BinaryTTNLayer(torch.nn.Module):
         # - i: in_dim
         # - j: in_dim
 
-        print(f'[Layer - {("V", "H")[self.orientation]}: {self.grid_shape}] min: {output.min():.3f}, max: {output.max():.3f}')
+        # print(f'[Layer - {("V", "H")[self.orientation]}: {self.grid_shape}] min: {output.min():.3f}, max: {output.max():.3f}')
         return output
 
 
