@@ -1,4 +1,5 @@
 import torch
+torch.set_default_dtype(torch.float64)
 
 def qr_factorize(X:torch.Tensor, eps:float=1e-9)->tuple[torch.Tensor, torch.Tensor]:
     '''

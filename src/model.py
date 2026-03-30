@@ -6,6 +6,7 @@ import math
 from src.mnist import get_dataset, PadAndEmbed
 from src.qr import qr_factorize_tens
 
+torch.set_default_dtype(torch.float64)
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
 class BinaryTTNLayer(torch.nn.Module):
@@ -34,6 +35,21 @@ class BinaryTTNLayer(torch.nn.Module):
         self.weights = torch.nn.Parameter(
             torch.rand((*self.grid_shape, bond_dim, in_dim, in_dim))
         )
+
+        self.init_isometric_()
+
+    @torch.no_grad()
+    def init_isometric_(self):
+        weights = torch.rand_like(self.weights)
+        h, w, bond_dim, in_dim, _ = weights.shape
+
+        weights_reshaped = weights.permute((0, 1, 3, 4, 2)).reshape((h, w, in_dim**2, bond_dim))
+        Q, R = qr_factorize_tens(weights_reshaped)
+
+        self.weights.copy_(
+            Q.reshape((h, w, in_dim, in_dim, bond_dim)).permute((0, 1, 4, 2, 3))
+        )
+
 
     def forward(self, x:torch.Tensor):
         in_dim = x.shape[-1]
