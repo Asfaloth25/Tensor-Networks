@@ -20,10 +20,10 @@ class BinaryTTNLayer(torch.nn.Module):
             input_shape (tuple[int, int]): Number of pixels (tensors) in the previous layer. 
                 Since the TTN consists of interweaved horizontal-vertical layers, the orientation
                 will be determined from `input_shape` automatically.
-                For vertical (`orientation=0`) layers, the output will be of shape `[input_shape[0]//2, input_shape[1], bond_dim]`.
-                For horizontal (`orientation=1`) layers, the output will be of shape `[input_shape[0], input_shape[1]//2, bond_dim]`.
+                For vertical (`orientation=0`) layers, the output will be of shape `[batch, input_shape[0]//2, input_shape[1], bond_dim]`.
+                For horizontal (`orientation=1`) layers, the output will be of shape `[batch, input_shape[0], input_shape[1]//2, bond_dim]`.
 
-            in_dim (int): The dimension of the input vectors to this layer. Inputs should be of size `[input_shape[0], input_shape[1], in_dim]`.
+            in_dim (int): The dimension of the input vectors to this layer. Inputs should be of size `[batch, input_shape[0], input_shape[1], in_dim]`.
         '''
 
         super().__init__()
@@ -112,7 +112,7 @@ class BinaryTTN(torch.nn.Module):
         self._layers = nn.Sequential(*layers)
 
     def forward(self, x:torch.Tensor):   
-        x = x.permute(0, 2, 3, 1) # [w, h, pixel_dim]
+        x = x.permute(0, 2, 3, 1) # [batch, w, h, pixel_dim]
 
         return self._layers(x)
     
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         )
     )
 
-    TTN = BinaryTTN((32,32), 2, 16)
+    TTN = BinaryTTN((32,32), 2, 4)
 
     from pprint import pprint
 
