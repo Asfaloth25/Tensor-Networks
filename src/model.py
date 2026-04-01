@@ -51,7 +51,7 @@ class BinaryTTNLayer(torch.nn.Module):
         )
 
 
-    def forward(self, x:torch.Tensor): 
+    def forward(self, x:torch.Tensor, prev_log_norm:torch.Tensor, eps:float=1e-9): 
         batch_size, _, _, in_dim = x.shape
 
         h, w = self.grid_shape
@@ -71,7 +71,10 @@ class BinaryTTNLayer(torch.nn.Module):
         # - j: in_dim
 
         # print(f'[Layer - {("V", "H")[self.orientation]}: {self.grid_shape}] min: {output.min():.3f}, max: {output.max():.3f}')
-        return output
+        norm = output.norm(dim=-1).clamp_min(eps)
+        log_norm = torch.log(norm).sum(dim=(1,2))
+
+        return output/norm.unsqueeze(-1), log_norm + prev_log_norm
 
 
 class BinaryTTN(torch.nn.Module):
@@ -111,10 +114,20 @@ class BinaryTTN(torch.nn.Module):
 
         self._layers = nn.Sequential(*layers)
 
-    def forward(self, x:torch.Tensor):   
+    def forward(self, x:torch.Tensor, return_log_probability:bool=False):   
         x = x.permute(0, 2, 3, 1) # [batch, w, h, pixel_dim]
 
-        return self._layers(x)
+        batch_size = x.shape[0]
+
+        log_norm = torch.zeros(batch_size, device=x.device)
+
+        for layer in self._layers:
+            x, log_norm = layer(x, log_norm)
+
+        if return_log_probability:
+            return log_norm
+
+        return x * log_norm.exp()
     
     @torch.no_grad()
     def canonicalize_network(self, normalize_root:bool=False):
@@ -193,9 +206,11 @@ if __name__ == '__main__':
     img = ds[0][0].unsqueeze(0)
 
     print(TTN(img))
+    print('Log output:', TTN(img, return_log_probability=True))
 
     TTN.canonicalize_network()
     
     print('\n\nCanonicalized network:')
     pprint({i: layer.weights.norm().item() for i, layer in enumerate(TTN._layers)})
     print(TTN(img))
+    print('Log output:', TTN(img, return_log_probability=True))

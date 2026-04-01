@@ -13,9 +13,7 @@ class Loss(nn.Module):
         self.epsilon = epsilon
 
     def forward(self, x:torch.Tensor):
-        log_psi = torch.log(torch.abs(x) + self.epsilon)
-        loss = -2 * log_psi.mean()  # factor 2: log(|ψ|^2) = 2 log|ψ|
-        return loss
+        return -x.mean()
 
 
 if __name__ == "__main__":
@@ -69,7 +67,7 @@ if __name__ == "__main__":
             
             optimizer.zero_grad()
 
-            outputs = model(inputs)
+            outputs = model(inputs, return_log_probability=True) * 2
             l = loss(outputs)
 
             if not i%PRINT_EVERY:
@@ -82,4 +80,4 @@ if __name__ == "__main__":
         print('- Losses:')
         pprint(losses, width=70)
 
-        breakpoint()
+    breakpoint()
