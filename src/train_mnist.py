@@ -18,8 +18,8 @@ class Loss(nn.Module):
 
 if __name__ == "__main__":
 
-    N_EPOCHS = 5
-    LEARNING_RATE = 0.1
+    N_EPOCHS = 2
+    LEARNING_RATE = 0.01
     MOMENTUM = 0.9
     PRINT_EVERY = 100
 
@@ -50,9 +50,12 @@ if __name__ == "__main__":
         momentum=MOMENTUM
     )
 
-    from pprint import pprint
+    old_model = BinaryTTN((32, 32), 2, 16)
+    for l1, l2 in zip(model._layers, old_model._layers):
+        l2.weights.data.copy_(l1.weights)
 
-    old_weights = model._layers[-1].weights.clone()
+
+    from pprint import pprint
 
     for epoch in range(N_EPOCHS):
         print('\n', '-='*15+'{', f'Epoch {epoch}', '}'+'=-'*15)
@@ -73,11 +76,30 @@ if __name__ == "__main__":
             if not i%PRINT_EVERY:
                 losses[i] = l.item()
 
+            # print('Breakpoint 1')
+            # breakpoint()
             l.backward()
+            # print('Breakpoint 2')
+            # breakpoint()
             optimizer.step()
-
+            # print('Breakpoint 3')
+            # breakpoint()
+            model.canonicalize_network(normalize_root=True)
 
         print('- Losses:')
         pprint(losses, width=70)
+
+    iterator = loader_train.__iter__()
+    imgs, labels = iterator.__next__()
+
+    batch_size = imgs.shape[0]
+
+    theta = torch.rand((batch_size, 32, 32))
+    random_imgs = torch.stack([torch.cos(theta * torch.pi/2), torch.sin(theta * torch.pi/2)]).permute(1, 0, 2, 3)
+    
+    log_probs_real = model(imgs, return_log_probability=True)
+    log_probs_fake = model(random_imgs, return_log_probability=True)
+
+    log_probs_old = old_model(imgs, return_log_probability=True)
 
     breakpoint()

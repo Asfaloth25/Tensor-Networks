@@ -1,4 +1,5 @@
 *.pdf
 
+local/
 data/
 env/

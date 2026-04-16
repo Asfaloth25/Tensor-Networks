@@ -180,6 +180,8 @@ class BinaryTTN(torch.nn.Module):
 
         new_weights = torch.einsum('x y i k, x y b k j -> x y b i j', left, layer.weights)
         new_weights = torch.einsum('x y j k, x y b i k -> x y b i j', right, new_weights)
+        if normalize_root:
+            new_weights /= new_weights.norm()
         layer.weights.copy_(new_weights)
 
 
