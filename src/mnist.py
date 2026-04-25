@@ -1,4 +1,5 @@
 import torchvision
+from torchvision.transforms import v2
 import torch
 
 def get_dataset(train:bool=True, transform=None)->torchvision.datasets.MNIST:
@@ -20,16 +21,26 @@ class PadAndEmbed:
         This is essential for TTNs to model the image space correctly.
         '''
         embedded_img = torch.cat([torch.cos(img * torch.pi/2), torch.sin(img * torch.pi/2)])
-        orig_h, orig_w = embedded_img.shape[-2:]
+        embed_dim, orig_h, orig_w = embedded_img.shape
 
-        img_size = 2 ** torch.log2(torch.Tensor(list(img.shape[-2:]))).ceil().int()
+        img_size = 2 ** torch.log2(torch.Tensor([orig_h, orig_w])).ceil().int()
 
-        padded_img = torch.zeros((*embedded_img.shape[:-2], *img_size))
+        padded_img = torch.zeros((embed_dim, *img_size))
+        padded_img[0, ...] = 1
         padded_img[..., :orig_h, :orig_w] = embedded_img
 
         return padded_img
 
 
 if __name__ == "__main__":
-    ds = get_dataset(True, torchvision.transforms.ToTensor())
-    breakpoint()
+    ds = get_dataset(
+        train=True, 
+        transform=v2.Compose(
+            [
+                v2.ToImage(), 
+                v2.ToDtype(torch.float32, scale=True),
+                PadAndEmbed()
+            ]
+        )
+    )[0]
+

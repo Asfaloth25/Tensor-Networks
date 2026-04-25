@@ -60,6 +60,51 @@ def qr_factorize_tens(X:torch.Tensor, eps:float=1e-9)->tuple[torch.Tensor, torch
     return Q, R
 
 
+permutation_map = { # pre-QR, post-QR (inverse)
+    'up':       ((1, 2, 0), (2, 0, 1)),
+    'left':     ((0, 2, 1), (0, 2, 1)),
+    'right':    ((0, 1, 2), (0, 1, 2))
+}
+
+def directional_node_qr(node:torch.Tensor, direction:str='up')->tuple[torch.Tensor, torch.Tensor]:
+    '''
+    direction must be in {"up", "left", "right"}
+
+    T : [bond_dim, left, right]
+
+    Q: [bond_dim, left, right] (isometric towards `direction`)
+
+    R: {"up": [bond_dim, bond_dim], "left": [left, left], "right": [right, right]}
+    '''
+
+    direction = direction.lower()
+    assert direction in permutation_map, f'Directional node QR does not support direction "{direction}".'
+    
+    dims = torch.tensor(node.shape)
+    permutation = permutation_map[direction]
+
+    node_reshaped = node.clone().permute(permutation[0]).flatten(start_dim=0, end_dim=1)
+    Q, R = qr_factorize(node_reshaped)
+
+    Q = Q.reshape([dims[i].item() for i in permutation[0]]).permute(permutation[1])
+    return Q, R
+
+einsum_map = {
+    'up':       'b k, k i j -> b i j',
+    'left':     'i k, b k j -> b i j',
+    'right':    'j k, b i k -> b i j'
+}
+def absorb_r_node(node:torch.Tensor, R:torch.Tensor, direction:str='up'):
+    '''
+    `direction`: where the R comes from relative to `node`. For example, if `node` is
+    the right child of "parent" and "parent" calculated R with respect to its right,
+    `node` has to absorb R from direction `"up"`.
+    '''
+
+    assert direction in einsum_map, f'Directional R absorb does not support direction "{direction}".'
+
+    return torch.einsum(einsum_map[direction], R, node)
+
 if __name__ == "__main__":
 
     # seed = 2026; torch.manual_seed(seed)

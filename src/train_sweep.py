@@ -22,7 +22,6 @@ class Loss(nn.Module):
 if __name__ == "__main__":
 
     N_EPOCHS = 20
-    D_MAX = 8
     LEARNING_RATE = 0.01
     MOMENTUM = 0.0
     PRINT_EVERY = 100
@@ -45,7 +44,7 @@ if __name__ == "__main__":
         drop_last=True
     )
 
-    model = BinaryTTN((32, 32), 2, D_MAX).to(device)
+    model = BinaryTTN((32, 32), 2, 4).to(device)
     loss = Loss(epsilon=1e-12)
 
     optimizer = torch.optim.SGD(
@@ -54,7 +53,7 @@ if __name__ == "__main__":
         momentum=MOMENTUM
     )
 
-    old_model = BinaryTTN((32, 32), 2, D_MAX).to(device)
+    old_model = BinaryTTN((32, 32), 2, 4).to(device)
     for l1, l2 in zip(model._layers, old_model._layers):
         l2.weights.data.copy_(l1.weights)
 
