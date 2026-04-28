@@ -18,6 +18,10 @@ class Loss(nn.Module):
     def forward(self, x:torch.Tensor):
         return -x.mean()
 
+def cycle_dataloader(loader: torch.utils.data.DataLoader):
+    while 1:
+        for batch in loader:
+            yield batch
 
 if __name__ == "__main__":
 
@@ -39,23 +43,21 @@ if __name__ == "__main__":
 
     loader_train = torch.utils.data.DataLoader(
         ds_train,
-        batch_size=64, 
+        batch_size=32, 
         shuffle=True, 
         drop_last=True
     )
 
-    model = BinaryTTN((32, 32), 2, 4).to(device)
-    loss = Loss(epsilon=1e-12)
+    get_data = cycle_dataloader(loader_train)
 
-    optimizer = torch.optim.SGD(
-        model.parameters(), 
-        lr=LEARNING_RATE, 
-        momentum=MOMENTUM
-    )
+    model = BinaryTTN((32, 32), 2, 4).to(device)
+    model.rightmost_canonicalize()
+    loss = Loss(epsilon=1e-12)
 
     old_model = BinaryTTN((32, 32), 2, 4).to(device)
     for l1, l2 in zip(model._layers, old_model._layers):
         l2.weights.data.copy_(l1.weights)
+    old_model._center = model._center
 
 
     from pprint import pprint
@@ -64,30 +66,20 @@ if __name__ == "__main__":
         print('\n', '-='*15+'{', f'Epoch {epoch}', '}'+'=-'*15)
 
         losses = {}
-        # import time
-        # for i in tqdm(range(1000), ncols=70):
-        #     time.sleep(0.0025)
 
-        for i, data in enumerate(tqdm(loader_train, ncols=70)):
-            inputs, labels = data
+        for i, center in enumerate(tqdm(model.sweep(), ncols=70, total=2*model.n_nodes)):
+            inputs, labels = next(get_data)
             inputs = inputs.to(device)
-            optimizer.zero_grad()
 
             outputs = model(inputs, return_log_probability=True) * 2
             l = loss(outputs)
-
             if not i%PRINT_EVERY:
                 losses[i] = l.item()
-
-            # print('Breakpoint 1')
-            # breakpoint()
             l.backward()
-            # print('Breakpoint 2')
-            # breakpoint()
-            optimizer.step()
-            # print('Breakpoint 3')
-            # breakpoint()
-            # model.canonicalize_network(normalize_root=True)
+
+            grad = model[center[0]].weights.grad[center[1:]]
+            with torch.no_grad():
+                model[center] -= grad * LEARNING_RATE
 
         print('- Losses:')
         pprint(losses, width=70)

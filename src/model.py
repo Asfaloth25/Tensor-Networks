@@ -3,6 +3,8 @@ from torch import nn
 from torchvision.transforms import v2
 import math
 
+from typing import Generator
+
 from src.mnist import get_dataset, PadAndEmbed
 from src.qr import qr_factorize_tens, directional_node_qr, absorb_r_node
 
@@ -118,6 +120,9 @@ class BinaryTTN(torch.nn.Module):
         layers.append(BinaryTTNLayer(bond_dim=1, input_shape=(1,2), in_dim=bond_dim))
 
         self._layers = nn.Sequential(*layers)
+
+        self.n_nodes = sum([torch.prod(torch.tensor(i.weights.shape[:2])) for i in self]).item()
+
         self._updated_sweep = [
             torch.zeros((layer.weights.shape[:2])) for layer in self._layers
         ]
@@ -163,13 +168,12 @@ class BinaryTTN(torch.nn.Module):
         return node_pos[1+orientation]%2
 
     @torch.no_grad
-    def sweep(self):
+    def sweep(self)->Generator[tuple[int, int, int], None, None]:
         '''
         Raises AssertionError if the center is not the rightmost tensor in the network (first layer, bottom-right corner).
 
         Returns only the positions of the tensors that should be updated, sequentially.
         '''
-
         start_center = (0, *(torch.tensor(self[0, ...].shape[:2])-1).tolist())
         assert self._center and self._center == start_center, f'Network must be rightmost-canonicalized: center must be {start_center}, currently {self._center}.'
         for sweep_left in (1, 0):
@@ -201,8 +205,6 @@ class BinaryTTN(torch.nn.Module):
                     new_center = candidates[direction]
 
                 else:
-                    # breakpoint()
-                    # raise ValueError(f'Node {self._center} has {len(candidates)} > 2 unupdated neighbours.')
                     direction = ('left', 'right')[sweep_left]
                     new_center = candidates[direction]
 
@@ -238,16 +240,17 @@ class BinaryTTN(torch.nn.Module):
         for layer in self._layers:
             x, log_norm = layer(x, log_norm)
 
-        if return_log_probability:
-            return log_norm
+        Z = (self[self._center] ** 2).sum()
 
-        return x * log_norm.exp()
+        if return_log_probability:
+            return log_norm * 2 - torch.log(Z)
+
+        return (x * log_norm.exp())**2 / Z
 
     
     @torch.no_grad()
     def rightmost_canonicalize(self, normalize_root:bool=False):
         self.canonicalize_network(normalize_root)
-
         node = (self._n_layers-1, 0, 0)
         adj = self._get_adjacent(node)
         while 'right' in adj:
