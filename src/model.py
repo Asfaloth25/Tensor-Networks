@@ -128,6 +128,29 @@ class BinaryTTN(torch.nn.Module):
         ]
         self._center=None
 
+
+    @staticmethod
+    def from_file(file_path:str):
+        state = torch.load(file_path)
+        model = BinaryTTN(**state['init_params'])
+        model._center = state['center']
+        with torch.no_grad():
+            for i, layer in enumerate(model._layers):
+                layer.weights.copy_(state['layer_weights'][f'_layers.{i}.weights'])
+        return model
+
+    def save(self, file_path:str):
+        state = {
+            'init_params': {
+                'input_shape': self._input_shape,
+                'bond_dim': self._bond_dim,
+                'pixel_embedding_dim': self._pixel_embedding_dim
+            },
+            'center': self._center,
+            'layer_weights': self.state_dict()
+        }
+        torch.save(state, file_path)
+
     def __getitem__(self, key:tuple[int, int, int])->torch.Tensor:
         '''
         Returns the node (tensor) at depth (layer) `key[0]` and grid coordinates `key[1:]`
@@ -230,7 +253,7 @@ class BinaryTTN(torch.nn.Module):
 
 
 
-    def forward(self, x:torch.Tensor, return_log_probability:bool=False):   
+    def forward(self, x:torch.Tensor, return_log_probability:bool=False, normalize_output:bool=True):   
         x = x.permute(0, 2, 3, 1) # [batch, w, h, pixel_dim]
 
         batch_size = x.shape[0]
@@ -240,14 +263,13 @@ class BinaryTTN(torch.nn.Module):
         for layer in self._layers:
             x, log_norm = layer(x, log_norm)
 
-        Z = (self[self._center] ** 2).sum()
+        Z = (self[self._center] ** 2).sum() if normalize_output else 1
 
         if return_log_probability:
             return log_norm * 2 - torch.log(Z)
 
         return (x * log_norm.exp())**2 / Z
 
-    
     @torch.no_grad()
     def rightmost_canonicalize(self, normalize_root:bool=False):
         self.canonicalize_network(normalize_root)

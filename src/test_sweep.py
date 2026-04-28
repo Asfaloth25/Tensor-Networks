@@ -22,12 +22,12 @@ if __name__ == "__main__":
 
     print('Each pixel has modulus 1:', torch.allclose(img[:, 0, ...]**2 + img[:, 1, ...]**2, torch.ones_like(theta).unsqueeze(dim=0)))
 
-    print('Pre canon:', model(img))
+    print('Pre canon:', model(img, normalize_output=False))
 
     model.canonicalize_network()
-    print('Canon 1:', model(img))
+    print('Canon 1:', model(img, normalize_output=False))
 
-    print('Clone, pre canon:', model_clone(img))
+    print('Clone, pre canon:', model_clone(img, normalize_output=False))
 
     per_layer_differences = [(l1.weights - l2.weights).abs().mean().item() for l1, l2 in zip(model._layers, model_clone._layers)]
 
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     model_clone.rightmost_canonicalize()
     per_layer_differences = [(l1.weights - l2.weights).abs().mean().item() for l1, l2 in zip(model._layers, model_clone._layers)]
     print('Difference per layer:', per_layer_differences)
-    print('Clone, post canon:', model_clone(img))
+    print('Clone, post canon:', model_clone(img, normalize_output=False))
     
     for node in model_clone.sweep():
         print(node)

@@ -3,3 +3,6 @@
 local/
 data/
 env/
+
+saved_models/*
+!saved_models/best_model.pt

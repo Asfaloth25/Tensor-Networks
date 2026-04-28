@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     print('Each pixel has modulus 1:', torch.allclose(img[:, 0, ...]**2 + img[:, 1, ...]**2, torch.ones_like(theta).unsqueeze(dim=0)))
 
-    print(model(img))
+    print(model(img, normalize_output=False))
 
     model.canonicalize_network()
-    print(model(img))
+    print(model(img, normalize_output=False))
