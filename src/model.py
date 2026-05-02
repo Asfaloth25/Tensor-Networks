@@ -104,11 +104,11 @@ class BinaryTTN(torch.nn.Module):
         for i, n_pixels in enumerate(input_shape):
             assert (not math.log2(n_pixels) % 1), f'The {("height", "width")[i]} of the input should be a power of 2. [input_shape = {input_shape}]'
         
-        self._input_shape = input_shape
+        self.input_shape = input_shape
 
         self._bond_dim = bond_dim
 
-        self._pixel_embedding_dim = pixel_embedding_dim
+        self.pixel_embedding_dim = pixel_embedding_dim
 
         self._n_layers = round(math.log2(input_shape[0]*input_shape[1]))
 
@@ -142,9 +142,9 @@ class BinaryTTN(torch.nn.Module):
     def save(self, file_path:str):
         state = {
             'init_params': {
-                'input_shape': self._input_shape,
+                'input_shape': self.input_shape,
                 'bond_dim': self._bond_dim,
-                'pixel_embedding_dim': self._pixel_embedding_dim
+                'pixel_embedding_dim': self.pixel_embedding_dim
             },
             'center': self._center,
             'layer_weights': self.state_dict()
@@ -268,7 +268,7 @@ class BinaryTTN(torch.nn.Module):
         if return_log_probability:
             return log_norm * 2 - torch.log(Z)
 
-        return (x * log_norm.exp())**2 / Z
+        return (x.squeeze() * log_norm.exp())**2 / Z
 
     @torch.no_grad()
     def rightmost_canonicalize(self, normalize_root:bool=False):
