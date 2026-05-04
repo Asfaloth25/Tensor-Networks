@@ -264,11 +264,11 @@ class BinaryTTN(torch.nn.Module):
             x, log_norm = layer(x, log_norm)
 
         Z = (self[self._center] ** 2).sum() if normalize_output else 1
-
+        log_norm = log_norm.view(-1, 1, 1, 1)
         if return_log_probability:
             return log_norm * 2 - torch.log(Z)
-
-        return (x.squeeze() * log_norm.exp())**2 / Z
+        
+        return (x * log_norm)**2 / Z
 
     @torch.no_grad()
     def rightmost_canonicalize(self, normalize_root:bool=False):
