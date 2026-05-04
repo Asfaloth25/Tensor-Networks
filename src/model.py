@@ -260,8 +260,12 @@ class BinaryTTN(torch.nn.Module):
 
         log_norm = torch.zeros(batch_size, device=x.device)
 
+        i = 0
         for layer in self._layers:
+            print('layer', i)
             x, log_norm = layer(x, log_norm)
+            breakpoint()
+            i = i+1
 
         Z = (self[self._center] ** 2).sum() if normalize_output else 1
         log_norm = log_norm.view(-1, 1, 1, 1)

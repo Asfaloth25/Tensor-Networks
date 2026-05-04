@@ -25,10 +25,13 @@ def cycle_dataloader(loader: torch.utils.data.DataLoader):
 
 if __name__ == "__main__":
 
-    N_EPOCHS = 20
+    N_EPOCHS = 101
     LEARNING_RATE = 0.01
-    MOMENTUM = 0.0
-    PRINT_EVERY = 100
+    BOND_DIM = 32
+    PRINT_EVERY = 100 # steps
+    SAVE_EVERY = 5 # epochs
+
+    MODEL_NAME = input('Please name the model:\n> ')
 
     ds_train = get_dataset(
         train=True, 
@@ -50,18 +53,21 @@ if __name__ == "__main__":
 
     get_data = cycle_dataloader(loader_train)
 
-    model = BinaryTTN((32, 32), 2, 4).to(device)
-    model.rightmost_canonicalize()
+    model = BinaryTTN((32, 32), 2, BOND_DIM).to(device)
+    model.rightmost_canonicalize(normalize_root=True)
     loss = Loss(epsilon=1e-12)
 
-    old_model = BinaryTTN((32, 32), 2, 4).to(device)
-    for l1, l2 in zip(model._layers, old_model._layers):
-        l2.weights.data.copy_(l1.weights)
-    old_model._center = model._center
+    # old_model = BinaryTTN((32, 32), 2, BOND_DIM).to(device)
+    # for l1, l2 in zip(model._layers, old_model._layers):
+    #     l2.weights.data.copy_(l1.weights)
+    # old_model._center = model._center
 
 
     from pprint import pprint
+    import os
 
+    os.makedirs(f'./saved_models/{MODEL_NAME}/', exist_ok=False)
+    model.save(f'./saved_models/{MODEL_NAME}/untrained.pt')
     for epoch in range(N_EPOCHS):
         print('\n', '-='*15+'{', f'Epoch {epoch}', '}'+'=-'*15)
 
@@ -71,7 +77,7 @@ if __name__ == "__main__":
             inputs, labels = next(get_data)
             inputs = inputs.to(device)
 
-            outputs = model(inputs, return_log_probability=True) * 2
+            outputs = model(inputs, return_log_probability=True)
             l = loss(outputs)
             if not i%PRINT_EVERY:
                 losses[i] = l.item()
@@ -83,6 +89,11 @@ if __name__ == "__main__":
 
         print('- Losses:')
         pprint(losses, width=70)
+
+        if not(epoch % SAVE_EVERY):
+            model.save(f'./saved_models/{MODEL_NAME}/epoch_{epoch}.pt')
+
+    model.save(f'./saved_models/{MODEL_NAME}/epoch_{epoch}.pt')
 
     iterator = loader_train.__iter__()
     imgs, labels = iterator.__next__()
@@ -96,6 +107,6 @@ if __name__ == "__main__":
     log_probs_real = model(imgs, return_log_probability=True)
     log_probs_fake = model(random_imgs, return_log_probability=True)
 
-    log_probs_old = old_model(imgs, return_log_probability=True)
+    # log_probs_old = old_model(imgs, return_log_probability=True)
 
     breakpoint()
